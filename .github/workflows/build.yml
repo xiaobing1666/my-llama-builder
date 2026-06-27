@@ -12,23 +12,43 @@ jobs:
   build-windows-cuda:
     runs-on: windows-2022
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout Code
+      uses: actions/checkout@v4
       with:
         repository: ggml-org/llama.cpp
         ref: ${{ github.event.inputs.llama_version }}
 
-    # 1. 核心修复：使用 30MB 官方网络精简安装包，在云端只流式抽取百兆核心，完美防爆盘、防 404
-    - name: Install CUDA 12.4.1 (Network)
+    # 1. 核心安全锁：引入同步阻塞轮询，杜绝网络安装包子进程脱离导致 CMake 提前抢跑
+    - name: Install CUDA 12.4.1 (Network Sync)
       run: |
+        echo "正在拉取官方网络分发引擎..."
         Invoke-WebRequest -Uri "https://developer.download.nvidia.com/compute/cuda/12.4.1/network_installers/cuda_12.4.1_windows_network.exe" -OutFile "cuda_network_installer.exe"
+        
+        echo "正在内存中流式部署 nvcc 编译器核心..."
         Start-Process -FilePath ".\cuda_network_installer.exe" -ArgumentList "-s nvcc_12.4 runtime_12.4 cublas_12.4 cublas_dev_12.4" -Wait
-        # 强行刷新当前执行环境的 Path 路径，确保下一步的 cmake 能够直接感知 nvcc
+        
+        $TARGET_NVCC = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin\nvcc.exe"
+        $TIMEOUT_COUNTER = 0
+        
+        # 强制轮询等待：如果 nvcc 实体还没写完，每 5 秒阻塞一次，最长死等 5 分钟
+        while (-not (Test-Path $TARGET_NVCC)) {
+            if ($TIMEOUT_COUNTER -ge 60) {
+                throw "网络分发包超出了云端最大等待阈值，释放 nvcc 失败。"
+            }
+            echo "英伟达底层正在流式传输二进制组件，已同步等待 $($TIMEOUT_COUNTER * 5) 秒..."
+            Start-Sleep -Seconds 5
+            $TIMEOUT_COUNTER++
+        }
+        
+        echo "=========================================="
+        echo "🎉 核心组件全量写盘成功！NVCC 已经安全落地。"
+        echo "=========================================="
+        
         $CUDA_BIN = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin"
-        $env:PATH = "$CUDA_BIN;$env:PATH"
         echo "$CUDA_BIN" >> $env:GITHUB_PATH
 
-    # 2. 灵魂进化：精准注入 -DGGML_CUDA_FA_ALL_QUANTS=ON，彻底释放非对称 KV 缓存的显存压缩神技
-    - name: Build with CMake
+    # 2. 移除越界 cd 命令，精准附加非对称全量化扩展开关
+    - name: Configure CMake
       run: |
         $CUDA_ROOT = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
         $env:PATH = "$CUDA_ROOT\bin;$env:PATH"
@@ -39,10 +59,13 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release `
           -DCUDAToolkit_ROOT="$CUDA_ROOT" `
           -DCMAKE_CUDA_COMPILER="$CUDA_ROOT\bin\nvcc.exe"
-          
+
+    # 3. 根目录无缝构建，修复 Project file does not exist 报错
+    - name: Build with MSBuild
+      run: |
         cmake --build build --config Release
 
-    # 3. 全打包输出：一网打尽所有主程序和子文件夹下的动态链接库（如关键的 ggml-cuda.dll）
+    # 4. 成果打包分发
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
