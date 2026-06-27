@@ -86,10 +86,10 @@ jobs:
         set /A NINJA_JOBS=%NUMBER_OF_PROCESSORS%-1
         cmake --build build --config Release -j %NINJA_JOBS% -t ggml
         cmake --build build --config Release
-        cmake --install build --config Release --prefix build/bin
+        cmake --install build --config Release --prefix build/dist
 
     - name: Upload Production Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: llama-cpp-cuda12-ninja-all-programs-${{ github.event.inputs.llama_version }}
-        path: build/bin/Release/
+        path: build/dist/
