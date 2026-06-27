@@ -1,4 +1,4 @@
-name: Build Llama.cpp CUDA 12.4 (Official Production Linux Standard)
+name: Build Llama.cpp CUDA 12.4 (Official Production Clang Standard)
 
 on:
   workflow_dispatch:
@@ -7,10 +7,6 @@ on:
         description: 'Target llama.cpp version (e.g., master or tag)'
         required: true
         default: 'master'
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref && github.ref || github.run_id }}
-  cancel-in-progress: true
 
 env:
   GGML_NLOOP: 3
@@ -21,8 +17,7 @@ env:
 
 jobs:
   cuda-production-build:
-    runs-on: ubuntu-24.04
-    container: nvidia/cuda:12.6.2-devel-ubuntu24.04
+    runs-on: windows-2022
 
     steps:
     - name: Clone Code
@@ -32,37 +27,72 @@ jobs:
         ref: ${{ github.event.inputs.llama_version }}
         fetch-depth: 0
 
-    - name: Install dependencies
-      env:
-        DEBIAN_FRONTEND: noninteractive
+    - name: Install Cuda Toolkit 12.4 (Redist Method)
+      shell: pwsh
       run: |
-        apt update
-        apt install -y cmake build-essential ninja-build libgomp1 git libssl-dev
+          mkdir -p "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
+          choco install unzip -y
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-12.4.127-archive.zip"
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/cuda_nvcc/windows-x86_64/cuda_nvcc-windows-x86_64-12.4.131-archive.zip"
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/cuda_nvrtc/windows-x86_64/cuda_nvrtc-windows-x86_64-12.4.127-archive.zip"
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/libcublas/windows-x86_64/libcublas-windows-x86_64-12.4.5.8-archive.zip"
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/cuda_nvtx/windows-x86_64/cuda_nvtx-windows-x86_64-12.4.127-archive.zip"
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/cuda_profiler_api/windows-x86_64/cuda_profiler_api-windows-x86_64-12.4.127-archive.zip"
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/visual_studio_integration/windows-x86_64/visual_studio_integration-windows-x86_64-12.4.127-archive.zip"
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/cuda_nvprof/windows-x86_64/cuda_nvprof-windows-x86_64-12.4.127-archive.zip"
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/cuda_cccl/windows-x86_64/cuda_cccl-windows-x86_64-12.4.127-archive.zip"
+          unzip '*.zip' -d "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\cuda_cudart-windows-x86_64-12.4.127-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\cuda_nvcc-windows-x86_64-12.4.131-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\cuda_nvrtc-windows-x86_64-12.4.127-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\libcublas-windows-x86_64-12.4.5.8-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\cuda_nvtx-windows-x86_64-12.4.127-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\cuda_profiler_api-windows-x86_64-12.4.127-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\visual_studio_integration-windows-x86_64-12.4.127-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\cuda_nvprof-windows-x86_64-12.4.127-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\cuda_cccl-windows-x86_64-12.4.127-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          echo "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\libnvvp" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          echo "CUDA_PATH_V12_4=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-    - name: ccache
-      uses: ggml-org/ccache-action@v1.2.21
-      with:
-        key: cuda-ubuntu-24.04-cuda
-        evict-old-files: 1d
-        save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-
-    - name: Build with CMake
+    - name: Install LLVM Clang and Ninja Compiler
       run: |
-        cmake -S . -B build -G Ninja \
-          -DLLAMA_FATAL_WARNINGS=ON \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_CUDA_ARCHITECTURES=89-real \
-          -DCMAKE_EXE_LINKER_FLAGS=-Wl,--allow-shlib-undefined \
-          -DLLAMA_BUILD_TESTS=OFF \
-          -DGGML_NATIVE=OFF \
-          -DGGML_CUDA=ON \
-          -DGGML_CUDA_CUB_3DOT2=ON \
-          -DGGML_CUDA_FA_ALL_QUANTS=ON
-        cmake --build build
-        cmake --install build --prefix build/dist
+        choco install llvm -y --no-progress
+        choco install ninja -y --no-progress
+
+    - name: Production Build with Official Clang & NVCC Hybrid Optimization
+      shell: pwsh
+      run: |
+        $CUDA_ROOT = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
+        $env:PATH = "$CUDA_ROOT\bin;$env:PATH"
+        
+        $CLANG_C = "C:\Program Files\LLVM\bin\clang.exe"
+        $CLANG_CXX = "C:\Program Files\LLVM\bin\clang++.exe"
+
+        cmake -S . -B build -G Ninja `
+          -DCMAKE_C_COMPILER="$CLANG_C" `
+          -DCMAKE_CXX_COMPILER="$CLANG_CXX" `
+          -DLLAMA_BUILD_SERVER=ON `
+          -DLLAMA_BUILD_BORINGSSL=ON `
+          -DLLAMA_BUILD_TESTS=OFF `
+          -DGGML_NATIVE=OFF `
+          -DGGML_BACKEND_DL=ON `
+          -DGGML_CPU_ALL_VARIANTS=ON `
+          -DGGML_CUDA=ON `
+          -DGGML_RPC=ON `
+          -DGGML_CUDA_CUB_3DOT2=ON `
+          -DGGML_CUDA_FA_ALL_QUANTS=ON `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DCUDAToolkit_ROOT="$CUDA_ROOT" `
+          -DCMAKE_CUDA_COMPILER="$CUDA_ROOT\bin\nvcc.exe"
+        $NINJA_JOBS = [int]$env:NUMBER_OF_PROCESSORS - 1
+        cmake --build build -j $NINJA_JOBS -t ggml
+        cmake --build build -j $NINJA_JOBS
+        cmake --install build --prefix build/bin
 
     - name: Upload Production Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: llama-cpp-linux-cuda12-${{ github.event.inputs.llama_version }}
-        path: build/dist/
+        name: llama-cpp-cuda12-clang-ninja-${{ github.event.inputs.llama_version }}
+        path: build/bin/bin/
