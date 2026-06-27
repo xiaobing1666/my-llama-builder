@@ -1,0 +1,55 @@
+name: Build All Llama.cpp Programs CUDA 12.4
+
+on:
+  workflow_dispatch:
+    inputs:
+      llama_version:
+        description: '请输入你要编译的 llama.cpp 版本 (例如 master, b4700, 或具体的 Commit Hash)'
+        required: true
+        default: 'master'
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    
+    steps:
+    - name: Clone Llama.cpp (Custom Version)
+      run: |
+        git clone https://github.com/ggml-org/llama.cpp.git
+        cd llama.cpp
+        $TARGET_VERSION = "${{ github.event.inputs.llama_version }}"
+        echo "正在切换至目标版本: $TARGET_VERSION"
+        git checkout $TARGET_VERSION
+        
+    - name: Setup MSBuild and MSVC
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Install CUDA Toolkit 12.4
+      run: |
+        choco install cuda --version=12.4.1 -y --no-progress
+
+    - name: Configure CMake with ALL_QUANTS
+      run: |
+        cd llama.cpp
+        $env:CUDA_PATH = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
+        $env:PATH = "$env:CUDA_PATH\bin;$env:PATH"
+        
+        cmake -B build -G "Visual Studio 17 2022" -A x64 `
+          -DGGML_CUDA=ON `
+          -DGGML_CUDA_FA_ALL_QUANTS=ON `
+          -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build All Executables
+      run: |
+        cd llama.cpp
+        # 去掉了 --target 参数，CMake 会默认编译整个项目的所有工具
+        cmake --build build --config Release
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: llama-cpp-cuda124-all-programs-${{ github.event.inputs.llama_version }}
+        path: |
+          # 使用通配符 *.exe，将编译出的所有工具全部打包
+          llama.cpp/build/bin/Release/*.exe
+          llama.cpp/build/bin/Release/*.dll
