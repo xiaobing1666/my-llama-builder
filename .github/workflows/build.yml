@@ -1,73 +1,91 @@
-name: Build Llama.cpp CUDA 12.4 (Minimal Network Install)
+name: Build Llama.cpp CUDA 12.4 (Official Production Ninja Standard)
 
 on:
   workflow_dispatch:
     inputs:
       llama_version:
-        description: 'Target llama.cpp version'
+        description: 'Target llama.cpp version (e.g., master or tag)'
         required: true
         default: 'master'
 
 jobs:
-  build-windows-cuda:
+  cuda-production-build:
     runs-on: windows-2022
+
     steps:
-    - name: Checkout Code
+    - name: Clone Code
       uses: actions/checkout@v4
       with:
         repository: ggml-org/llama.cpp
         ref: ${{ github.event.inputs.llama_version }}
 
-    # 1. 核心安全锁：引入同步阻塞轮询，杜绝网络安装包子进程脱离导致 CMake 提前抢跑
-    - name: Install CUDA 12.4.1 (Network Sync)
+    # 1. 100% 采用你发出来的官方正统 redist 管道，免安装、不卡进程、零爆盘风险
+    - name: Install Cuda Toolkit 12.4 (Redist Method)
+      shell: pwsh
       run: |
-        echo "正在拉取官方网络分发引擎..."
-        Invoke-WebRequest -Uri "https://developer.download.nvidia.com/compute/cuda/12.4.1/network_installers/cuda_12.4.1_windows_network.exe" -OutFile "cuda_network_installer.exe"
-        
-        echo "正在内存中流式部署 nvcc 编译器核心..."
-        Start-Process -FilePath ".\cuda_network_installer.exe" -ArgumentList "-s nvcc_12.4 runtime_12.4 cublas_12.4 cublas_dev_12.4" -Wait
-        
-        $TARGET_NVCC = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin\nvcc.exe"
-        $TIMEOUT_COUNTER = 0
-        
-        # 强制轮询等待：如果 nvcc 实体还没写完，每 5 秒阻塞一次，最长死等 5 分钟
-        while (-not (Test-Path $TARGET_NVCC)) {
-            if ($TIMEOUT_COUNTER -ge 60) {
-                throw "网络分发包超出了云端最大等待阈值，释放 nvcc 失败。"
-            }
-            echo "英伟达底层正在流式传输二进制组件，已同步等待 $($TIMEOUT_COUNTER * 5) 秒..."
-            Start-Sleep -Seconds 5
-            $TIMEOUT_COUNTER++
-        }
-        
-        echo "=========================================="
-        echo "🎉 核心组件全量写盘成功！NVCC 已经安全落地。"
-        echo "=========================================="
-        
-        $CUDA_BIN = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin"
-        echo "$CUDA_BIN" >> $env:GITHUB_PATH
+          mkdir -p "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
+          choco install unzip -y
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-12.4.127-archive.zip"
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/cuda_nvcc/windows-x86_64/cuda_nvcc-windows-x86_64-12.4.131-archive.zip"
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/cuda_nvrtc/windows-x86_64/cuda_nvrtc-windows-x86_64-12.4.127-archive.zip"
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/libcublas/windows-x86_64/libcublas-windows-x86_64-12.4.5.8-archive.zip"
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/cuda_nvtx/windows-x86_64/cuda_nvtx-windows-x86_64-12.4.127-archive.zip"
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/cuda_profiler_api/windows-x86_64/cuda_profiler_api-windows-x86_64-12.4.127-archive.zip"
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/visual_studio_integration/windows-x86_64/visual_studio_integration-windows-x86_64-12.4.127-archive.zip"
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/cuda_nvprof/windows-x86_64/cuda_nvprof-windows-x86_64-12.4.127-archive.zip"
+          curl -O "https://developer.download.nvidia.com/compute/cuda/redist/cuda_cccl/windows-x86_64/cuda_cccl-windows-x86_64-12.4.127-archive.zip"
+          unzip '*.zip' -d "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\cuda_cudart-windows-x86_64-12.4.127-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\cuda_nvcc-windows-x86_64-12.4.131-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\cuda_nvrtc-windows-x86_64-12.4.127-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\libcublas-windows-x86_64-12.4.5.8-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\cuda_nvtx-windows-x86_64-12.4.127-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\cuda_profiler_api-windows-x86_64-12.4.127-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\visual_studio_integration-windows-x86_64-12.4.127-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\cuda_nvprof-windows-x86_64-12.4.127-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          xcopy "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\cuda_cccl-windows-x86_64-12.4.127-archive\*" "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" /E /I /H /Y
+          echo "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\libnvvp" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          echo "CUDA_PATH_V12_4=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-    # 2. 移除越界 cd 命令，精准附加非对称全量化扩展开关
-    - name: Configure CMake
+    # 2. 完全对齐官方最新 CI：使用 Choco 静默架设 Ninja 高速分布式编译器
+    - name: Install Ninja Compiler
       run: |
-        $CUDA_ROOT = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
-        $env:PATH = "$CUDA_ROOT\bin;$env:PATH"
-        
-        cmake -B build -G "Visual Studio 17 2022" -A x64 `
-          -DGGML_CUDA=ON `
-          -DGGML_CUDA_FA_ALL_QUANTS=ON `
-          -DCMAKE_BUILD_TYPE=Release `
-          -DCUDAToolkit_ROOT="$CUDA_ROOT" `
-          -DCMAKE_CUDA_COMPILER="$CUDA_ROOT\bin\nvcc.exe"
+        choco install ninja -y --no-progress
 
-    # 3. 根目录无缝构建，修复 Project file does not exist 报错
-    - name: Build with MSBuild
+    # 3. 灵魂飞跃：采用官方标准的 cmd 环境下的 vcvarsall.bat 预初始化，结合 Ninja 与你的非对称加速开关
+    - name: Production Build with Ninja Multi-Config
+      shell: cmd
       run: |
+        :: 调用微软企业版环境脚本，强行激活 64 位 MSVC 编译器上下文
+        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+        
+        :: 完美锁死物理路径，100% 杜绝任何 Could not find nvcc 报错
+        set "CUDA_ROOT=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
+        set "PATH=%CUDA_ROOT%\bin;%PATH%"
+        
+        :: 配置 CMake：无缝融合官方生产级核心参数 + 你的专属扩展开关
+        cmake -S . -B build -G "Ninja Multi-Config" ^
+          -DLLAMA_BUILD_SERVER=ON ^
+          -DLLAMA_BUILD_BORINGSSL=ON ^
+          -DGGML_NATIVE=OFF ^
+          -DGGML_BACKEND_DL=ON ^
+          -DGGML_CPU_ALL_VARIANTS=ON ^
+          -DGGML_CUDA=ON ^
+          -DGGML_RPC=ON ^
+          -DGGML_CUDA_CUB_3DOT2=ON ^
+          -DGGML_CUDA_FA_ALL_QUANTS=ON ^
+          -DCMAKE_BUILD_TYPE=Release ^
+          -DCUDAToolkit_ROOT="%CUDA_ROOT%" ^
+          -DCMAKE_CUDA_COMPILER="%CUDA_ROOT%\bin\nvcc.exe"
+          
+        :: 利用云端多核算子压榨编译速度，全量构建
         cmake --build build --config Release
 
-    # 4. 成果打包分发
-    - name: Upload Artifacts
+    # 4. 全量打包输出结果（Ninja 生成的二进制程序统一存放在 build/bin/Release 下）
+    - name: Upload Production Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: llama-cpp-cuda12-all-programs-${{ github.event.inputs.llama_version }}
+        name: llama-cpp-cuda12-ninja-all-programs-${{ github.event.inputs.llama_version }}
         path: build/bin/Release/
