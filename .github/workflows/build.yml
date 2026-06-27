@@ -1,4 +1,4 @@
-name: Build Llama.cpp CUDA 12.4 (Official Production Clang Standard)
+name: Build Llama.cpp CUDA 12.4 (Official Production Ninja Standard)
 
 on:
   workflow_dispatch:
@@ -91,5 +91,5 @@ jobs:
     - name: Upload Production Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: llama-cpp-cuda12-clang-ninja-${{ github.event.inputs.llama_version }}
-        path: build/bin/bin/
+        name: llama-cpp-cuda12-ninja-all-programs-${{ github.event.inputs.llama_version }}
+        path: build/bin/Release/
