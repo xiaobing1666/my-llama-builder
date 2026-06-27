@@ -18,8 +18,8 @@ jobs:
       with:
         repository: ggml-org/llama.cpp
         ref: ${{ github.event.inputs.llama_version }}
+        fetch-depth: 0
 
-    # 1. 100% 采用你发出来的官方正统 redist 管道，免安装、不卡进程、零爆盘风险
     - name: Install Cuda Toolkit 12.4 (Redist Method)
       shell: pwsh
       run: |
@@ -49,26 +49,23 @@ jobs:
           echo "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           echo "CUDA_PATH_V12_4=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-    # 2. 完全对齐官方最新 CI：使用 Choco 静默架设 Ninja 高速分布式编译器
     - name: Install Ninja Compiler
       run: |
         choco install ninja -y --no-progress
 
-    # 3. 灵魂飞跃：采用官方标准的 cmd 环境下的 vcvarsall.bat 预初始化，结合 Ninja 与你的非对称加速开关
     - name: Production Build with Ninja Multi-Config
       shell: cmd
       run: |
-        :: 调用微软企业版环境脚本，强行激活 64 位 MSVC 编译器上下文
+
         call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
-        
-        :: 完美锁死物理路径，100% 杜绝任何 Could not find nvcc 报错
+
         set "CUDA_ROOT=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
         set "PATH=%CUDA_ROOT%\bin;%PATH%"
-        
-        :: 配置 CMake：无缝融合官方生产级核心参数 + 你的专属扩展开关
+
         cmake -S . -B build -G "Ninja Multi-Config" ^
           -DLLAMA_BUILD_SERVER=ON ^
           -DLLAMA_BUILD_BORINGSSL=ON ^
+          -DLLAMA_BUILD_TESTS=OFF ^
           -DGGML_NATIVE=OFF ^
           -DGGML_BACKEND_DL=ON ^
           -DGGML_CPU_ALL_VARIANTS=ON ^
@@ -79,11 +76,10 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release ^
           -DCUDAToolkit_ROOT="%CUDA_ROOT%" ^
           -DCMAKE_CUDA_COMPILER="%CUDA_ROOT%\bin\nvcc.exe"
-          
-        :: 利用云端多核算子压榨编译速度，全量构建
-        cmake --build build --config Release
 
-    # 4. 全量打包输出结果（Ninja 生成的二进制程序统一存放在 build/bin/Release 下）
+        cmake --build build --config Release
+        cmake --install build --config Release --prefix build/bin
+
     - name: Upload Production Artifacts
       uses: actions/upload-artifact@v4
       with:
