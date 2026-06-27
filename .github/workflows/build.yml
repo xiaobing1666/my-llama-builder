@@ -21,15 +21,15 @@ jobs:
         echo "正在切换至目标版本: $TARGET_VERSION"
         git checkout $TARGET_VERSION
 
-    # 官方标准写法：直接探测、激活和配置 GitHub 虚拟机中原生的 CUDA 环境变量
     - name: Configure CUDA Environment
       run: |
-        # 探测当前 windows-2022 镜像中预装的 CUDA 12 路径并建立安全映射
+        # 探测当前 windows-2022 镜像中预装的 CUDA 12 路径并建立全局安全映射
         if (Test-Path "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA") {
             $cuda_dir = Get-ChildItem "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA" | Select-Object -First 1
             if ($cuda_dir) {
                 $env:CUDA_PATH = $cuda_dir.FullName
                 echo "探测到预装的 CUDA 路径: $env:CUDA_PATH"
+                # 写入 GitHub Actions 跨步骤全局变量管道
                 echo "CUDA_PATH=$env:CUDA_PATH" >> $env:GITHUB_ENV
                 echo "$env:CUDA_PATH\bin" >> $env:GITHUB_PATH
             }
@@ -41,16 +41,29 @@ jobs:
     - name: Configure CMake with ALL_QUANTS
       run: |
         cd llama.cpp
-        # 采用与官方构建矩阵一致的声明方式
+        
+        # 强行锁定并提取当前步骤的 CUDA 绝对路径，彻底粉碎 "Could not find nvcc" 报错
+        $CUDA_VERSION_DIR = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
+        if (-not (Test-Path $CUDA_VERSION_DIR)) {
+            $found_dir = Get-ChildItem "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA" | Select-Object -First 1
+            if ($found_dir) { $CUDA_VERSION_DIR = $found_dir.FullName }
+        }
+        
+        $env:PATH = "$CUDA_VERSION_DIR\bin;$env:PATH"
+        $env:CUDA_PATH = $CUDA_VERSION_DIR
+        
+        # 显式使用 -DCUDAToolkit_ROOT 和 -DCMAKE_CUDA_COMPILER 将 nvcc 强行喂给 CMake 编译器
         cmake -B build -G "Visual Studio 17 2022" -A x64 `
           -DGGML_CUDA=ON `
           -DGGML_CUDA_FA_ALL_QUANTS=ON `
-          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_BUILD_TYPE=Release `
+          -DCUDAToolkit_ROOT="$CUDA_VERSION_DIR" `
+          -DCMAKE_CUDA_COMPILER="$CUDA_VERSION_DIR\bin\nvcc.exe"
 
     - name: Build All Programs
       run: |
         cd llama.cpp
-        # 与官方保持一致，直接构建全套方案，不限制 --target
+        # 构建整个项目的所有免限制可执行程序
         cmake --build build --config Release
 
     - name: Upload Custom Build Artifacts
@@ -58,5 +71,6 @@ jobs:
       with:
         name: llama-cpp-cuda12-all-programs-${{ github.event.inputs.llama_version }}
         path: |
-          llama.cpp/build/bin/Release/*.exe
-          llama.cpp/build/bin/Release/*.dll
+          # 核心改动：直接指定打包整个 Release 文件夹。
+          # 这样能一网打尽所有主程序、子目录下的动态库组件，且绝不会因为单文件不匹配而报错！
+          llama.cpp/build/bin/Release/
