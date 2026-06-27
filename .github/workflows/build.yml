@@ -21,11 +21,27 @@ jobs:
         echo "正在切换至目标版本: $TARGET_VERSION"
         git checkout $TARGET_VERSION
 
-    # 官方标准写法：直接读取全局自带的 CUDA_PATH 环境变量将其暴露给全局，绝无物理路径报错风险
-    - name: Set CUDA Environment
+    # 核心修复步骤：既然虚拟机没带，我们就从英伟达官方存储服务器直接秒级拉取核心开发包
+    - name: Download and Install CUDA 12.4.1 Toolkit
       run: |
-        echo "CUDA_PATH=$env:CUDA_PATH" >> $env:GITHUB_ENV
-        echo "$env:CUDA_PATH\bin" >> $env:GITHUB_PATH
+        echo "正在从英伟达官方拉取 CUDA 12.4.1 核心静默安装程序..."
+        # 必须使用这个包含 local_installers 的离线包完整直连，保证不是网页文本
+        Invoke-WebRequest -Uri "https://developer.download.nvidia.com/compute/cuda/12.4.1/local_installers/cuda_12.4.1_551.78_windows.exe" -OutFile "cuda_installer.exe"
+        
+        echo "正在执行云端静默抽取核心编译算子，请稍候..."
+        # 精准抽离编译所必须的 nvcc、runtime、cublas 及其核心开发头文件，跳过臃肿的显卡驱动。
+        # 这种精准“瘦身安装”只需要 1-2 分钟，不仅防报错，还能省下几 GB 的空间开销！
+        Start-Process -FilePath ".\cuda_installer.exe" -ArgumentList "-s nvcc_12.4 runtime_12.4 cublas_12.4 cublas_dev_12.4 visual_studio_integration_12.4" -Wait
+        
+        # 强制将生成好的物理路径注入全局管道，供接下来的步骤识别
+        $CUDA_PATH_DIR = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
+        if (Test-Path "$CUDA_PATH_DIR\bin\nvcc.exe") {
+            echo "CUDA 12.4.1 核心组件成功锁定！"
+            echo "CUDA_PATH=$CUDA_PATH_DIR" >> $env:GITHUB_ENV
+            echo "$CUDA_PATH_DIR\bin" >> $env:GITHUB_PATH
+        } else {
+            throw "CUDA 核心组件静默安装失败，请检查安装目录空间。"
+        }
 
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
@@ -33,16 +49,23 @@ jobs:
     - name: Configure CMake with ALL_QUANTS
       run: |
         cd llama.cpp
-        # 遵循官方矩阵构建规范，依靠环境变量自动寻找 nvcc，同时精准注入你的非对称全量化扩展
+        
+        # 强制锁死物理路径传递
+        $CUDA_VERSION_DIR = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
+        $env:PATH = "$CUDA_VERSION_DIR\bin;$env:PATH"
+        $env:CUDA_PATH = $CUDA_VERSION_DIR
+        
+        # 精准投喂给 CMake，开启你的非对称混合量化全速硬件加速
         cmake -B build -G "Visual Studio 17 2022" -A x64 `
           -DGGML_CUDA=ON `
           -DGGML_CUDA_FA_ALL_QUANTS=ON `
-          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_BUILD_TYPE=Release `
+          -DCUDAToolkit_ROOT="$CUDA_VERSION_DIR" `
+          -DCMAKE_CUDA_COMPILER="$CUDA_VERSION_DIR\bin\nvcc.exe"
 
     - name: Build All Programs
       run: |
         cd llama.cpp
-        # 与官方标准流水线一致，全量编译整个项目工具，不限制 target
         cmake --build build --config Release
 
     - name: Upload Custom Build Artifacts
@@ -50,5 +73,4 @@ jobs:
       with:
         name: llama-cpp-cuda12-all-programs-${{ github.event.inputs.llama_version }}
         path: |
-          # 打包官方默认的所有 Release 产物输出目录（一网打尽所有 .exe、.dll 和动态算子库）
           llama.cpp/build/bin/Release/
