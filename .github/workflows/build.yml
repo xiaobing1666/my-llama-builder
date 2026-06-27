@@ -1,4 +1,4 @@
-name: Build All Llama.cpp Programs CUDA 12.4
+name: Build All Llama.cpp Programs CUDA 12.4 (Official Standard)
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
         default: 'master'
 
 jobs:
-  build-windows:
+  build-windows-cuda:
     runs-on: windows-2022
     
     steps:
@@ -20,36 +20,43 @@ jobs:
         $TARGET_VERSION = "${{ github.event.inputs.llama_version }}"
         echo "正在切换至目标版本: $TARGET_VERSION"
         git checkout $TARGET_VERSION
-        
+
+    # 官方标准写法：直接探测、激活和配置 GitHub 虚拟机中原生的 CUDA 环境变量
+    - name: Configure CUDA Environment
+      run: |
+        # 探测当前 windows-2022 镜像中预装的 CUDA 12 路径并建立安全映射
+        if (Test-Path "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA") {
+            $cuda_dir = Get-ChildItem "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA" | Select-Object -First 1
+            if ($cuda_dir) {
+                $env:CUDA_PATH = $cuda_dir.FullName
+                echo "探测到预装的 CUDA 路径: $env:CUDA_PATH"
+                echo "CUDA_PATH=$env:CUDA_PATH" >> $env:GITHUB_ENV
+                echo "$env:CUDA_PATH\bin" >> $env:GITHUB_PATH
+            }
+        }
+
     - name: Setup MSBuild and MSVC
       uses: microsoft/setup-msbuild@v2
-
-    - name: Install CUDA Toolkit 12.4
-      run: |
-        choco install cuda --version=12.4.1 -y --no-progress
 
     - name: Configure CMake with ALL_QUANTS
       run: |
         cd llama.cpp
-        $env:CUDA_PATH = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
-        $env:PATH = "$env:CUDA_PATH\bin;$env:PATH"
-        
+        # 采用与官方构建矩阵一致的声明方式
         cmake -B build -G "Visual Studio 17 2022" -A x64 `
           -DGGML_CUDA=ON `
           -DGGML_CUDA_FA_ALL_QUANTS=ON `
           -DCMAKE_BUILD_TYPE=Release
 
-    - name: Build All Executables
+    - name: Build All Programs
       run: |
         cd llama.cpp
-        # 去掉了 --target 参数，CMake 会默认编译整个项目的所有工具
+        # 与官方保持一致，直接构建全套方案，不限制 --target
         cmake --build build --config Release
 
-    - name: Upload Build Artifacts
+    - name: Upload Custom Build Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: llama-cpp-cuda124-all-programs-${{ github.event.inputs.llama_version }}
+        name: llama-cpp-cuda12-all-programs-${{ github.event.inputs.llama_version }}
         path: |
-          # 使用通配符 *.exe，将编译出的所有工具全部打包
           llama.cpp/build/bin/Release/*.exe
           llama.cpp/build/bin/Release/*.dll
