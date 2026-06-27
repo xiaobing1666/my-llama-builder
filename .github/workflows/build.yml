@@ -51,17 +51,13 @@ jobs:
         cmake -S . -B build -G Ninja \
           -DLLAMA_FATAL_WARNINGS=ON \
           -DCMAKE_BUILD_TYPE=Release \
-          -DLLAMA_BUILD_SERVER=ON \
-          -DLLAMA_BUILD_BORINGSSL=ON \
+          -DCMAKE_CUDA_ARCHITECTURES=89-real \
+          -DCMAKE_EXE_LINKER_FLAGS=-Wl,--allow-shlib-undefined \
           -DLLAMA_BUILD_TESTS=OFF \
           -DGGML_NATIVE=OFF \
-          -DGGML_BACKEND_DL=ON \
-          -DGGML_CPU_ALL_VARIANTS=ON \
           -DGGML_CUDA=ON \
-          -DGGML_RPC=ON \
           -DGGML_CUDA_CUB_3DOT2=ON \
           -DGGML_CUDA_FA_ALL_QUANTS=ON
-
         cmake --build build
         cmake --install build --prefix build/dist
 
