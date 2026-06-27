@@ -1,71 +1,50 @@
-name: Build All Llama.cpp Programs CUDA 12.4 (Official Standard)
+name: Build Llama.cpp CUDA 12.4 (Minimal Network Install)
 
 on:
   workflow_dispatch:
     inputs:
       llama_version:
-        description: '请输入你要编译的 llama.cpp 版本 (例如 master, b4700, 或具体的 Commit Hash)'
+        description: 'Target llama.cpp version'
         required: true
         default: 'master'
 
 jobs:
   build-windows-cuda:
     runs-on: windows-2022
-    
     steps:
-    - name: Clone Llama.cpp (Custom Version)
-      run: |
-        git clone https://github.com/ggml-org/llama.cpp.git
-        cd llama.cpp
-        $TARGET_VERSION = "${{ github.event.inputs.llama_version }}"
-        echo "正在切换至目标版本: $TARGET_VERSION"
-        git checkout $TARGET_VERSION
+    - uses: actions/checkout@v4
+      with:
+        repository: ggml-org/llama.cpp
+        ref: ${{ github.event.inputs.llama_version }}
 
-    # 核心修复步骤：使用系统标准的 Chocolatey 包管理器，仅抽取核心编译依赖，完美避开 3GB 大包爆盘和假链接漏洞
-    - name: Install Pure CUDA 12.4 Toolkit via Choco
+    # 1. 核心修复：使用 30MB 官方网络精简安装包，在云端只流式抽取百兆核心，完美防爆盘、防 404
+    - name: Install CUDA 12.4.1 (Network)
       run: |
-        echo "正在云端静默部署纯净版 CUDA 12.4 开发组件..."
-        # choco 会自动处理依赖和环境拓扑，-y 代表静默同意，--no-progress 阻止日志刷屏
-        choco install cuda --version=12.4.1 -y --no-progress
-        
-        # 锁定 Chocolatey 默认建立的物理根目录，强制刷新跨步骤管道
-        $CUDA_PATH_DIR = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
-        if (Test-Path "$CUDA_PATH_DIR\bin\nvcc.exe") {
-            echo "CUDA 12.4 纯净编译器成功部署！"
-            echo "CUDA_PATH=$CUDA_PATH_DIR" >> $env:GITHUB_ENV
-            echo "$CUDA_PATH_DIR\bin" >> $env:GITHUB_PATH
-        } else {
-            throw "CUDA 组件部署异常，未能锁定核心编译器 nvcc.exe。"
-        }
+        Invoke-WebRequest -Uri "https://developer.download.nvidia.com/compute/cuda/12.4.1/network_installers/cuda_12.4.1_windows_network.exe" -OutFile "cuda_network_installer.exe"
+        Start-Process -FilePath ".\cuda_network_installer.exe" -ArgumentList "-s nvcc_12.4 runtime_12.4 cublas_12.4 cublas_dev_12.4" -Wait
+        # 强行刷新当前执行环境的 Path 路径，确保下一步的 cmake 能够直接感知 nvcc
+        $CUDA_BIN = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin"
+        $env:PATH = "$CUDA_BIN;$env:PATH"
+        echo "$CUDA_BIN" >> $env:GITHUB_PATH
 
-    - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v2
-
-    - name: Configure CMake with ALL_QUANTS
+    # 2. 灵魂进化：精准注入 -DGGML_CUDA_FA_ALL_QUANTS=ON，彻底释放非对称 KV 缓存的显存压缩神技
+    - name: Build with CMake
       run: |
-        cd llama.cpp
+        $CUDA_ROOT = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
+        $env:PATH = "$CUDA_ROOT\bin;$env:PATH"
         
-        # 从上一步的环境管道中提取锁死的绝对路径
-        $CUDA_VERSION_DIR = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
-        $env:PATH = "$CUDA_VERSION_DIR\bin;$env:PATH"
-        $env:CUDA_PATH = $CUDA_VERSION_DIR
-        
-        # 精准投喂给 CMake，开启你的非对称混合量化全速硬件加速
         cmake -B build -G "Visual Studio 17 2022" -A x64 `
           -DGGML_CUDA=ON `
           -DGGML_CUDA_FA_ALL_QUANTS=ON `
           -DCMAKE_BUILD_TYPE=Release `
-          -DCUDAToolkit_ROOT="$CUDA_VERSION_DIR" `
-          -DCMAKE_CUDA_COMPILER="$CUDA_VERSION_DIR\bin\nvcc.exe"
-
-    - name: Build All Programs
-      run: |
-        cd llama.cpp
+          -DCUDAToolkit_ROOT="$CUDA_ROOT" `
+          -DCMAKE_CUDA_COMPILER="$CUDA_ROOT\bin\nvcc.exe"
+          
         cmake --build build --config Release
 
-    - name: Upload Custom Build Artifacts
+    # 3. 全打包输出：一网打尽所有主程序和子文件夹下的动态链接库（如关键的 ggml-cuda.dll）
+    - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: llama-cpp-cuda12-all-programs-${{ github.event.inputs.llama_version }}
-        path: |
-          llama.cpp/build/bin/Release/
+        path: build/bin/Release/
