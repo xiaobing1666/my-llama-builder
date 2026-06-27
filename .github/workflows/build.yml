@@ -21,26 +21,21 @@ jobs:
         echo "正在切换至目标版本: $TARGET_VERSION"
         git checkout $TARGET_VERSION
 
-    # 核心修复步骤：既然虚拟机没带，我们就从英伟达官方存储服务器直接秒级拉取核心开发包
-    - name: Download and Install CUDA 12.4.1 Toolkit
+    # 核心修复步骤：使用系统标准的 Chocolatey 包管理器，仅抽取核心编译依赖，完美避开 3GB 大包爆盘和假链接漏洞
+    - name: Install Pure CUDA 12.4 Toolkit via Choco
       run: |
-        echo "正在从英伟达官方拉取 CUDA 12.4.1 核心静默安装程序..."
-        # 必须使用这个包含 local_installers 的离线包完整直连，保证不是网页文本
-        Invoke-WebRequest -Uri "https://developer.download.nvidia.com/compute/cuda/12.4.1/local_installers/cuda_12.4.1_551.78_windows.exe" -OutFile "cuda_installer.exe"
+        echo "正在云端静默部署纯净版 CUDA 12.4 开发组件..."
+        # choco 会自动处理依赖和环境拓扑，-y 代表静默同意，--no-progress 阻止日志刷屏
+        choco install cuda --version=12.4.1 -y --no-progress
         
-        echo "正在执行云端静默抽取核心编译算子，请稍候..."
-        # 精准抽离编译所必须的 nvcc、runtime、cublas 及其核心开发头文件，跳过臃肿的显卡驱动。
-        # 这种精准“瘦身安装”只需要 1-2 分钟，不仅防报错，还能省下几 GB 的空间开销！
-        Start-Process -FilePath ".\cuda_installer.exe" -ArgumentList "-s nvcc_12.4 runtime_12.4 cublas_12.4 cublas_dev_12.4 visual_studio_integration_12.4" -Wait
-        
-        # 强制将生成好的物理路径注入全局管道，供接下来的步骤识别
+        # 锁定 Chocolatey 默认建立的物理根目录，强制刷新跨步骤管道
         $CUDA_PATH_DIR = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
         if (Test-Path "$CUDA_PATH_DIR\bin\nvcc.exe") {
-            echo "CUDA 12.4.1 核心组件成功锁定！"
+            echo "CUDA 12.4 纯净编译器成功部署！"
             echo "CUDA_PATH=$CUDA_PATH_DIR" >> $env:GITHUB_ENV
             echo "$CUDA_PATH_DIR\bin" >> $env:GITHUB_PATH
         } else {
-            throw "CUDA 核心组件静默安装失败，请检查安装目录空间。"
+            throw "CUDA 组件部署异常，未能锁定核心编译器 nvcc.exe。"
         }
 
     - name: Setup MSBuild
@@ -50,7 +45,7 @@ jobs:
       run: |
         cd llama.cpp
         
-        # 强制锁死物理路径传递
+        # 从上一步的环境管道中提取锁死的绝对路径
         $CUDA_VERSION_DIR = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
         $env:PATH = "$CUDA_VERSION_DIR\bin;$env:PATH"
         $env:CUDA_PATH = $CUDA_VERSION_DIR
