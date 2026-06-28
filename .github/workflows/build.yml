@@ -75,13 +75,8 @@ jobs:
         set /A NINJA_JOBS=%NUMBER_OF_PROCESSORS%-1
         cmake --build build --config Release -j %NINJA_JOBS% --target ggml-cuda
 
-    - name: Pack artifacts
-      id: pack_artifacts
-      run: |
-        7z a -snl llama-bin-win-cuda-12.4-x64.zip .\build\bin\Release\ggml-cuda.dll
-
     - name: Upload artifacts
       uses: actions/upload-artifact@v6
       with:
-        path: llama-bin-win-cuda-12.4-x64.zip
-        name: llama-bin-win-cuda-12.4--${{ github.event.inputs.llama_version }}-x64.zip
+        path: .\build\bin\Release\ggml-cuda.dll
+        name: llama-bin-win-cuda-12.4--${{ github.event.inputs.llama_version }}-x64
