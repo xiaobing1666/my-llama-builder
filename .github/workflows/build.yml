@@ -63,33 +63,26 @@ jobs:
     - name: Production Build with Ninja Multi-Config
       shell: cmd
       run: |
-
         call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
-
-        set "CUDA_ROOT=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
-        set "PATH=%CUDA_ROOT%\bin;%PATH%"
-
         cmake -S . -B build -G "Ninja Multi-Config" ^
-          -DLLAMA_BUILD_SERVER=ON ^
-          -DLLAMA_BUILD_BORINGSSL=ON ^
           -DLLAMA_BUILD_TESTS=OFF ^
-          -DGGML_NATIVE=OFF ^
           -DGGML_BACKEND_DL=ON ^
-          -DGGML_CPU_ALL_VARIANTS=ON ^
+          -DGGML_NATIVE=OFF ^
+          -DGGML_CPU=OFF ^
           -DGGML_CUDA=ON ^
-          -DGGML_RPC=ON ^
+          -DLLAMA_BUILD_BORINGSSL=ON ^
           -DGGML_CUDA_CUB_3DOT2=ON ^
-          -DGGML_CUDA_FA_ALL_QUANTS=ON ^
-          -DCMAKE_BUILD_TYPE=Release ^
-          -DCUDAToolkit_ROOT="%CUDA_ROOT%" ^
-          -DCMAKE_CUDA_COMPILER="%CUDA_ROOT%\bin\nvcc.exe"
+          -DGGML_CUDA_FA_ALL_QUANTS=ON
         set /A NINJA_JOBS=%NUMBER_OF_PROCESSORS%-1
-        cmake --build build --config Release -j %NINJA_JOBS% -t ggml
-        cmake --build build --config Release
-        cmake --install build --config Release --prefix build/dist
+        cmake --build build --config Release -j %NINJA_JOBS% --target ggml-cuda
 
-    - name: Upload Production Artifacts
-      uses: actions/upload-artifact@v4
+    - name: Pack artifacts
+      id: pack_artifacts
+      run: |
+        7z a -snl llama-bin-win-cuda-12.4-x64.zip .\build\bin\Release\ggml-cuda.dll
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v6
       with:
-        name: llama-cpp-cuda12-ninja-all-programs-${{ github.event.inputs.llama_version }}
-        path: build/dist/
+        path: llama-bin-win-cuda-${{ matrix.cuda }}-x64.zip
+        name: llama-bin-win-cuda-${{ matrix.cuda }}-x64.zip
