@@ -79,4 +79,4 @@ jobs:
       uses: actions/upload-artifact@v6
       with:
         path: .\build\bin\Release\ggml-cuda.dll
-        name: llama-bin-win-cuda-12.4--${{ github.event.inputs.llama_version }}-x64
+        name: llama-${{ github.event.inputs.llama_version }}-win-ggml-cuda-12.4-x64
